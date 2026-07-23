@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
+import joblib
+import plotly.express as px
 
 st.set_page_config(page_title="RetailPulse", layout="wide")
 
@@ -19,6 +20,12 @@ def load_inventory():
 @st.cache_data
 def load_forecast():
     return pd.read_csv("data/processed/forecast_30d.csv", parse_dates=["ds"])
+
+@st.cache_resource
+def load_churn_model():
+    model = joblib.load("models/xgb_churn_model.pkl")
+    feature_cols = joblib.load("models/churn_feature_cols.pkl")
+    return model, feature_cols
 
 # --- Data Load (cached, taaki har click par reload na ho) ---
 @st.cache_data
@@ -67,29 +74,44 @@ if page == "Executive Summary":
     col3.metric("Unique Customers", f"{filtered['CustomerID'].nunique():,}")
 
     st.subheader("Daily Revenue Trend")
-    daily = filtered.groupby(filtered["InvoiceDate"].dt.date)["TotalPrice"].sum()
-    st.line_chart(daily)
+    daily = filtered.groupby(filtered["InvoiceDate"].dt.date)["TotalPrice"].sum().reset_index()
+    daily.columns = ["Date", "Revenue"]
+    fig = px.line(daily, x="Date", y="Revenue", title=None)
+    fig.update_layout(margin=dict(l=0, r=0, t=10, b=0))
+    st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Top 10 Countries by Revenue")
-    top_countries = filtered.groupby("Country")["TotalPrice"].sum().nlargest(10)
-    st.bar_chart(top_countries)
+    top_countries = filtered.groupby("Country")["TotalPrice"].sum().nlargest(10).reset_index()
+    fig = px.bar(top_countries, x="TotalPrice", y="Country", orientation="h",
+                 labels={"TotalPrice": "Revenue (£)"})
+    fig.update_layout(yaxis=dict(categoryorder="total ascending"), margin=dict(l=0, r=0, t=10, b=0))
+    st.plotly_chart(fig, use_container_width=True)
 
 # --- Page 2: Sales Analytics ---
 elif page == "Sales Analytics":
     st.title("📈 Sales Analytics")
 
     st.subheader("Top 10 Products by Revenue")
-    top_products = filtered.groupby("Description")["TotalPrice"].sum().nlargest(10)
-    st.bar_chart(top_products)
+    top_products = filtered.groupby("Description")["TotalPrice"].sum().nlargest(10).reset_index()
+    fig = px.bar(top_products, x="TotalPrice", y="Description", orientation="h",
+                 labels={"TotalPrice": "Revenue (£)", "Description": "Product"})
+    fig.update_layout(yaxis=dict(categoryorder="total ascending"), margin=dict(l=0, r=0, t=10, b=0))
+    st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Revenue by Weekday")
     order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
-    weekday_rev = filtered.groupby("Weekday")["TotalPrice"].sum().reindex(order)
-    st.bar_chart(weekday_rev)
+    weekday_rev = filtered.groupby("Weekday")["TotalPrice"].sum().reindex(order).reset_index()
+    weekday_rev.columns = ["Weekday", "Revenue"]
+    fig = px.bar(weekday_rev, x="Weekday", y="Revenue")
+    fig.update_layout(margin=dict(l=0, r=0, t=10, b=0))
+    st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Revenue by Hour of Day")
-    hourly_rev = filtered.groupby("Hour")["TotalPrice"].sum()
-    st.bar_chart(hourly_rev)
+    hourly_rev = filtered.groupby("Hour")["TotalPrice"].sum().reset_index()
+    hourly_rev.columns = ["Hour", "Revenue"]
+    fig = px.bar(hourly_rev, x="Hour", y="Revenue")
+    fig.update_layout(margin=dict(l=0, r=0, t=10, b=0))
+    st.plotly_chart(fig, use_container_width=True)
 
 # --- Page 3: Customer Segmentation ---
 elif page == "Customer Segmentation":
@@ -98,22 +120,26 @@ elif page == "Customer Segmentation":
     segments = load_segments()
 
     st.subheader("Segment Sizes")
-    seg_counts = segments["Segment"].value_counts()
-    st.bar_chart(seg_counts)
+    seg_counts = segments["Segment"].value_counts().reset_index()
+    seg_counts.columns = ["Segment", "Count"]
+    fig = px.bar(seg_counts, x="Segment", y="Count", color="Segment")
+    fig.update_layout(margin=dict(l=0, r=0, t=10, b=0), showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Segment Profile (Average RFM)")
     profile = segments.groupby("Segment")[["Recency", "Frequency", "Monetary"]].mean()
     st.dataframe(profile.style.format("{:.1f}"))
 
     st.subheader("RFM Scatter — Recency vs Monetary")
-    fig, ax = plt.subplots(figsize=(8, 5))
-    for seg in segments["Segment"].unique():
-        subset = segments[segments["Segment"] == seg]
-        ax.scatter(subset["Recency"], subset["Monetary"], label=seg, alpha=0.5, s=10)
-    ax.set_xlabel("Recency (days)")
-    ax.set_ylabel("Monetary (£)")
-    ax.legend()
-    st.pyplot(fig)
+    st.caption("Hover over any point to see that customer's ID, frequency, and segment.")
+    fig = px.scatter(
+        segments, x="Recency", y="Monetary", color="Segment",
+        hover_data=["CustomerID", "Frequency"],
+        labels={"Recency": "Recency (days)", "Monetary": "Monetary (£)"},
+        opacity=0.6,
+    )
+    fig.update_layout(margin=dict(l=0, r=0, t=10, b=0))
+    st.plotly_chart(fig, use_container_width=True)
 
 # --- Page 4: Demand Forecasting ---
 elif page == "Demand Forecasting":
@@ -122,7 +148,11 @@ elif page == "Demand Forecasting":
     forecast = load_forecast()
 
     st.subheader("Next 30-Day Revenue Forecast")
-    st.line_chart(forecast.set_index("ds")[["yhat", "yhat_lower", "yhat_upper"]])
+    st.caption("Hover over the chart to see exact forecast values and confidence bounds for any date.")
+    fig = px.line(forecast, x="ds", y=["yhat", "yhat_lower", "yhat_upper"],
+                  labels={"ds": "Date", "value": "Revenue (£)", "variable": "Series"})
+    fig.update_layout(margin=dict(l=0, r=0, t=10, b=0))
+    st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Full History — Actual vs Model Fit (Backtest View)")
     st.image("reports/figures/forecast_plot.png", caption="Prophet fit across full history with confidence band")
@@ -137,6 +167,7 @@ elif page == "Churn Prediction":
     st.title("⚠️ Customer Churn Prediction (XGBoost)")
 
     churn = load_churn()
+    model, feature_cols = load_churn_model()
 
     col1, col2 = st.columns(2)
     col1.metric("Overall Churn Rate", f"{churn['Churned'].mean()*100:.1f}%")
@@ -145,7 +176,16 @@ elif page == "Churn Prediction":
     st.subheader("Model Performance")
     st.write("AUC-ROC: **0.781** &nbsp;&nbsp; Precision@Top20% Risk: **0.82**")
 
-    st.image("reports/figures/churn_feature_importance.png", caption="Feature Importance")
+    st.subheader("Feature Importance")
+    st.caption("Hover over any bar to see the exact importance score.")
+    importance_df = pd.DataFrame({
+        "Feature": feature_cols,
+        "Importance": model.feature_importances_
+    }).sort_values("Importance", ascending=True)
+    fig = px.bar(importance_df, x="Importance", y="Feature", orientation="h")
+    fig.update_layout(margin=dict(l=0, r=0, t=10, b=0))
+    st.plotly_chart(fig, use_container_width=True)
+
     st.image("reports/figures/churn_confusion_matrix.png", caption="Confusion Matrix")
 
     st.subheader("Top 20 At-Risk Customers")
@@ -162,8 +202,27 @@ elif page == "Inventory Optimization":
     st.dataframe(inventory)
 
     st.subheader("Recommended Order Quantity — Top 15 SKUs")
-    top15 = inventory.head(15).set_index("StockCode")["RecommendedOrderQty"]
-    st.bar_chart(top15)
+    st.caption("Hover over any bar to see the exact recommended order quantity.")
+
+    top15 = inventory.head(15).copy()
+    top15["StockCode"] = top15["StockCode"].astype(str)   # SKU ko text treat karo, number nahi
+    top15 = top15.sort_values("RecommendedOrderQty", ascending=True)
+
+    fig = px.bar(
+        top15,
+        x="RecommendedOrderQty",
+        y="StockCode",
+        orientation="h",
+        text="RecommendedOrderQty",
+        labels={"RecommendedOrderQty": "Recommended Order Qty", "StockCode": "SKU"},
+    )
+    fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
+    fig.update_layout(
+        yaxis=dict(type="category", categoryorder="array", categoryarray=top15["StockCode"].tolist()),
+        margin=dict(l=0, r=40, t=10, b=0),
+        height=500,
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 # --- Page 7: Project Notes ---
 elif page == "Project Notes":
