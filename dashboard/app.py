@@ -124,6 +124,9 @@ elif page == "Demand Forecasting":
     st.subheader("Next 30-Day Revenue Forecast")
     st.line_chart(forecast.set_index("ds")[["yhat", "yhat_lower", "yhat_upper"]])
 
+    st.subheader("Full History — Actual vs Model Fit (Backtest View)")
+    st.image("reports/figures/forecast_plot.png", caption="Prophet fit across full history with confidence band")
+
     st.subheader("Forecast Table")
     st.dataframe(forecast)
 
