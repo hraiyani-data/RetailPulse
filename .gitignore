@@ -5,3 +5,5 @@ __pycache__/
 data/raw/*.csv
 
 data/processed/retail_clean.csv
+
+~$*
