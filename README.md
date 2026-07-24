@@ -11,7 +11,7 @@ An end-to-end data science pipeline built on the UCI Online Retail II dataset, c
 
 Built as a data science internship project for **Zidio Development**.
 
-**🔗 Live Demo:** [retailpulse-xxxxxxxx.streamlit.app](https://retailpulse-xxxxxxxx.streamlit.app) *(replace with your actual URL)*
+**🔗 Live Demo:** https://retailpulse-g8bhtnuwdqumzaftonj8bq.streamlit.app/
 **👤 Author:** Hiren Raiyani ([@hraiyani-data](https://github.com/hraiyani-data))
 
 ---
